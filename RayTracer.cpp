@@ -66,8 +66,8 @@ struct Camera {
 
     std::pair<float, float> coordsToScreenSpace(int i, int j) const {
         float uPrime, vPrime;
-        uPrime = -(0.5f * viewW) + pixelW * i + 0.5f * pixelW;
-        vPrime = (0.5f * viewH) - pixelH * j - 0.5f * pixelH;
+        uPrime = -(0.5f * viewW) + pixelW * j + 0.5f * pixelW;
+        vPrime = (0.5f * viewH) - pixelH * i - 0.5f * pixelH;
         return {uPrime, vPrime};
     }
 
