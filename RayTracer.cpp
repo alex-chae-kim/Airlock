@@ -73,18 +73,18 @@ struct Camera {
 float raySphereIntersect(const glm::vec3& p, const glm::vec3& d, const Sphere& sphere) {
     float a = glm::dot(d, d);
 
-    glm::vec3 c = p - sphere.center; // c is the ray from the ray origin to the center of the sphere
-    float tClosest = -glm::dot(c, d) / a; // t value where the ray is closest to sphere center
+    glm::vec3 sphereRay = p - sphere.center; // c is the ray from the ray origin to the center of the sphere
+    float tClosest = -glm::dot(sphereRay, d) / a; // t value where the ray is closest to sphere center
 
     float r2 = sphere.radius * sphere.radius; 
-    float c2 = glm::dot(c, c);
+    float sphereRay2 = glm::dot(sphereRay, sphereRay);
 
     // if the closest point is behind the ray origin and the origin is outside the sphere, we can't see the sphere
-    if (tClosest < 0.0f && c2 > r2) return -1.0f; 
+    if (tClosest < 0.0f && sphereRay2 > r2) return -1.0f; 
 
-    float cDotD = glm::dot(c, d);
+    float cDotD = glm::dot(sphereRay, d);
     float b = 2.0f * cDotD;
-    float c = c2 - r2;
+    float c = sphereRay2 - r2;
 
     float disc = b * b - 4.0f * a * c;
     if (disc < 0.0f) return -1.0f;
