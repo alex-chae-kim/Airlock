@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 #include <iostream>
 #include <vector>
+#include <utility>
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow *window);
@@ -43,30 +44,53 @@ struct Sphere {
     float radius;
     glm::vec3 color;
     
-    Sphere(const glm::vec3& c, float r, const glm::vec3& col) 
+    Sphere(const glm::vec3 &c, float r, const glm::vec3 &col) 
         : center(c), radius(r), color(col) {}
 };
 
 struct Camera {
+    std::string mode;
     glm::vec3 e, d, u, v, w;
     int width, height;
-    float n , f;
-    glm::vec3 topLeft;
-    float pixelW, pixelH;
-    Camera(const glm::vec3& origin, const glm::vec3& viewDir, const glm::vec3& up, int xRes, int yRes, float near, float far, float viewWidth, float viewHeight) 
-        : e(origin), width(xRes), height(yRes), n(near), f(far) {
+    float n, f, p;
+    float pixelW, pixelH, viewW, viewH;
+    Camera(std::string cameraType, const glm::vec3& origin, const glm::vec3& viewDir, const glm::vec3& up, int xRes, int yRes, float near, float far, float viewWidth, float viewHeight, float perspectiveDistance) 
+        : mode(cameraType), e(origin), width(xRes), height(yRes), viewW(viewWidth), viewH(viewHeight), n(near), f(far), p(perspectiveDistance) {
         d = glm::normalize(viewDir);
         v = glm::normalize(up);
         w = -d;
         u = glm::normalize(glm::cross(v, w));
-        pixelW = viewWidth / float(width);
-        pixelH = viewHeight / float(height);
-        float halfW = 0.5f * viewWidth;
-        float halfH = 0.5f * viewHeight;
-        topLeft = (e + d * n) - u * halfW + v * halfH + u * (0.5f * pixelW) - v * (0.5f * pixelH);
+        pixelW = viewW / float(width);
+        pixelH = viewH / float(height);
     }
-    glm::vec3 getPixelOrigin(int i, int j) const {
-        return topLeft + u * (float(j) * pixelW) - v * (float(i) * pixelH);
+
+    std::pair<float, float> coordsToScreenSpace(int i, int j) const {
+        float uPrime, vPrime;
+        uPrime = -(0.5f * viewW) + pixelW * i + 0.5f * pixelW;
+        vPrime = (0.5f * viewH) - pixelH * j - 0.5f * pixelH;
+        return {uPrime, vPrime};
+    }
+
+    std::pair<glm::vec3, glm::vec3> getOrthographicRay(int i, int j) const {
+        auto [uP, vP] = coordsToScreenSpace(i, j);
+        glm::vec3 origin = e + u*uP + v*vP;
+        glm::vec3 direction = d;
+        return {origin, direction};
+    }
+
+    std::pair<glm::vec3, glm::vec3> getPerspectiveRay(int i, int j) const {
+        auto [uP, vP] = coordsToScreenSpace(i, j);
+        glm::vec3 origin = e;
+        glm::vec3 direction = glm::normalize(d*p + u*uP + v*vP);
+        return {origin, direction};
+    }
+
+    std::pair<glm::vec3, glm::vec3> getRay(int i, int j) const {
+        if (mode == "orthographic") {
+            return getOrthographicRay(i, j);
+        } else {
+            return getPerspectiveRay(i, j);
+        }
     }
 };
 
@@ -232,26 +256,24 @@ int main()
     unsigned char image[width*height*3];
 
     // Camera Setup
-    Camera cam = Camera(ORIGIN, X_AXIS, Z_AXIS, width, height, 0, 10, 10, 10);
+    Camera cam = Camera("perspective", ORIGIN, X_AXIS, Y_AXIS, width, height, 0, 10, 10, 10, 5);
 
     // Scene Objects
-    Sphere s1 = Sphere({5, 2, 0}, 3, {255, 0, 0});
-    Sphere s2 = Sphere({4, 1, 0}, 2, {0, 255, 0});
-    Sphere s3 = Sphere({3, 0, 0}, 1, {0, 0, 255});
+    Sphere s1 = Sphere({10, 0, 3}, 2, {255, 0, 0});
+    Sphere s2 = Sphere({5, 0, -3}, 2, {0, 0, 255});
 
-    std::vector<Sphere> sceneObjects = {s1, s2, s3};
+
+    std::vector<Sphere> sceneObjects = {s1, s2};
 
     for(int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
         {
-            glm::vec3 curPixelOrigin = cam.getPixelOrigin(i, j);
-            glm::vec3 curPixelRayDirection = cam.d;
+            auto [curPixelOrigin, curPixelRayDirection] = cam.getRay(i, j);
             std::vector<float> results(sceneObjects.size(), -1.0f);
             for (int k = 0; k < sceneObjects.size(); k++) {
                 results[k] = raySphereIntersect(curPixelOrigin, curPixelRayDirection, sceneObjects[k]);
             }
-
             float closestT = 1e9;
             int closestIndex = -1;
             for(int k = 0; k < results.size(); k++) {
