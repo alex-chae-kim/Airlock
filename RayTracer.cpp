@@ -9,6 +9,7 @@
 #include <utility>
 #include <type_traits>
 #include <memory>
+#include <cctype>
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow *window);
@@ -170,12 +171,12 @@ class Plane : public Shape {
     };
 
 struct Camera {
-    std::string mode;
+    char mode;
     glm::vec3 e, d, u, v, w;
     int width, height;
     float n, f, p;
     float pixelW, pixelH, viewW, viewH;
-    Camera(std::string cameraType, const glm::vec3& origin, const glm::vec3& viewDir, const glm::vec3& up, int xRes, int yRes, float near, float far, float viewWidth, float viewHeight, float perspectiveDistance) 
+    Camera(char cameraType, const glm::vec3& origin, const glm::vec3& viewDir, const glm::vec3& up, int xRes, int yRes, float near, float far, float viewWidth, float viewHeight, float perspectiveDistance) 
         : mode(cameraType), e(origin), width(xRes), height(yRes), viewW(viewWidth), viewH(viewHeight), n(near), f(far), p(perspectiveDistance) {
         d = glm::normalize(viewDir);
         v = glm::normalize(up);
@@ -207,7 +208,7 @@ struct Camera {
     }
 
     std::pair<glm::vec3, glm::vec3> getRay(int i, int j) const {
-        if (mode == "orthographic") {
+        if (tolower(mode) == 'o') {
             return getOrthographicRay(i, j);
         } else {
             return getPerspectiveRay(i, j);
@@ -345,20 +346,30 @@ int main()
     unsigned char image[width*height*3];
 
     // Camera Setup
-    Camera cam = Camera("perspective", ORIGIN, X_AXIS, Y_AXIS, width, height, 0, 10, 10, 10, 5);
+    Camera cam = Camera('p', glm::vec3{0.0f, 5.0f, 0.0f}, glm::vec3{1.0f, -0.05f, 0.0f}, glm::vec3{0.05f, 1, 0.0f}, width, height, 0, 10, 10, 10, 5);
 
     // Scene Objects
     std::vector<std::unique_ptr<Shape>> sceneObjects;
+
+    //plane
+    sceneObjects.emplace_back(std::make_unique<Plane>(
+        glm::vec3{0.0f, 0.0f, 0.0f},    // point
+        Y_AXIS,                         // normal
+        glm::vec3{50.0f, 50.0f, 50.0f}  // color
+    ));
+    // sphere 1
     sceneObjects.emplace_back(std::make_unique<Sphere>(
-        glm::vec3{10.0f, 0.0f, 3.0f},   // center
-        2.0f,                           // radius
+        glm::vec3{15.0f, 4.0f, 4.0f},   // center
+        4.0f,                           // radius
         glm::vec3{255.0f, 0.0f, 0.0f}   // color
     ));
+    // sphere 2
     sceneObjects.emplace_back(std::make_unique<Sphere>(
-        glm::vec3{5.0f, 0.0f, -3.0f},   // center
+        glm::vec3{10.0f, 2.0f, -3.0f},   // center
         2.0f,                           // radius
         glm::vec3{0.0f, 0.0f, 255.0f}   // color
     ));
+    // triangle 1
     sceneObjects.emplace_back(std::make_unique<Triangle>(
         glm::vec3{7.0f, 4.0f, 0.0f},    // a
         glm::vec3{7.0f, 0.0f, -1.0f},   // b
