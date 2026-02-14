@@ -371,9 +371,23 @@ int main()
     ));
     // triangle 1
     sceneObjects.emplace_back(std::make_unique<Triangle>(
-        glm::vec3{7.0f, 4.0f, 0.0f},    // a
-        glm::vec3{7.0f, 0.0f, -1.0f},   // b
+        glm::vec3{8.0f, 4.0f, 2.0f},    // a
+        glm::vec3{9.0f, 0.0f, -1.0f},   // b
         glm::vec3{7.0f, 0.0f, 1.0f},    // c
+        glm::vec3{0.0f, 255.0f, 0.0f}   // color
+    ));
+    // triangle 2
+    sceneObjects.emplace_back(std::make_unique<Triangle>(
+        glm::vec3{8.0f, 4.0f, 2.0f},    // a
+        glm::vec3{7.0f, 0.0f, 1.0f},    // b
+        glm::vec3{9.0f, 0.0f, 4.0f},    // c
+        glm::vec3{0.0f, 255.0f, 0.0f}   // color
+    ));
+    // triangle 3
+    sceneObjects.emplace_back(std::make_unique<Triangle>(
+        glm::vec3{8.0f, 4.0f, 2.0f},    // a
+        glm::vec3{9.0f, 0.0f, 4.0f},    // b
+        glm::vec3{9.0f, 0.0f, -1.0f},   // c
         glm::vec3{0.0f, 255.0f, 0.0f}   // color
     ));
 
