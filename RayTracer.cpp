@@ -7,6 +7,8 @@
 #include <iostream>
 #include <vector>
 #include <utility>
+#include <type_traits>
+#include <memory>
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow *window);
@@ -39,13 +41,101 @@ const char *fragmentShaderSource = "#version 330 core\n"
     "   FragColor = texture(texture1, TexCoord);\n"
     "}\n\0";
     
-struct Sphere {
+
+class Shape {
+    public:   
+        virtual ~Shape() = default;
+        virtual float getIntersection(const glm::vec3& p, const glm::vec3& d) const = 0;
+        virtual glm::vec3 getColor() const = 0;
+};
+
+struct Sphere : public Shape {
+public:
     glm::vec3 center;
     float radius;
     glm::vec3 color;
     
     Sphere(const glm::vec3 &c, float r, const glm::vec3 &col) 
-        : center(c), radius(r), color(col) {}
+        : center(c), radius(r), color(col) 
+    {}
+    
+    float getIntersection(const glm::vec3& p, const glm::vec3& d) const override {
+        float a = glm::dot(d, d);
+    
+        glm::vec3 sphereRay = p - center; // sphereRay is the ray from the ray origin to the center of the sphere
+        float tClosest = -glm::dot(sphereRay, d) / a; // t value where the ray is closest to sphere center
+    
+        float r2 = radius * radius; 
+        float sphereRay2 = glm::dot(sphereRay, sphereRay);
+    
+        // if the closest point is behind the ray origin and the origin is outside the sphere, we can't see the sphere
+        if (tClosest < 0.0f && sphereRay2 > r2) return -1.0f; 
+    
+        float cDotD = glm::dot(sphereRay, d);
+        float b = 2.0f * cDotD;
+        float c = sphereRay2 - r2;
+    
+        float disc = b * b - 4.0f * a * c;
+        if (disc < 0.0f) return -1.0f;
+    
+        float sqrtDisc = std::sqrt(disc);
+    
+        // Use the smaller root first
+        float t0 = (-b - sqrtDisc) / (2.0f * a);
+        float t1 = (-b + sqrtDisc) / (2.0f * a);
+    
+        if (t0 > 0) return t0;
+        if (t1 > 0) return t1;
+    
+        return -1.0f;
+    }
+
+    glm::vec3 getColor() const override { return color; }
+};   
+
+class Triangle : public Shape {
+public:
+    glm::vec3 a;
+    glm::vec3 b;
+    glm::vec3 c;
+    glm::vec3 color;
+
+    Triangle(const glm::vec3 &a, const glm::vec3 &b, const glm::vec3 &c, const glm::vec3 &color) 
+        : a(a), b(b), c(c), color(color)
+    {}
+
+    float getIntersection(const glm::vec3& p, const glm::vec3& d) const override { 
+        // small value to approximate 0
+        const float EPS = 1e-7f;
+    
+        // vectors along a->b and a->c 
+        glm::vec3 e1 = b - a;
+        glm::vec3 e2 = c - a;
+    
+        glm::vec3 h = glm::cross(d, e2);
+        float det = glm::dot(e1, h);
+    
+        // If det is near zero, ray is parallel to triangle plane
+        if (fabs(det) < EPS) return -1.0f;
+    
+        float invDet = 1.0f / det;
+    
+        glm::vec3 s = p - a;
+        float u = invDet * glm::dot(s, h); // Cramer's rule
+        if (u < 0.0f || u > 1.0f) return -1.0f;
+    
+        glm::vec3 q = glm::cross(s, e1);
+        float v = invDet * glm::dot(d, q); // Also Cramer's rule
+        if (v < 0.0f || (u + v) > 1.0f) return -1.0f;
+    
+        float t = invDet * glm::dot(e2, q);
+    
+        if (t <= EPS) return -1.0f; // don't report hits from behind the camera
+    
+        return t;
+    }
+
+    glm::vec3 getColor() const override { return color; }
 };
 
 struct Camera {
@@ -93,38 +183,6 @@ struct Camera {
         }
     }
 };
-
-float raySphereIntersect(const glm::vec3& p, const glm::vec3& d, const Sphere& sphere) {
-    float a = glm::dot(d, d);
-
-    glm::vec3 sphereRay = p - sphere.center; // c is the ray from the ray origin to the center of the sphere
-    float tClosest = -glm::dot(sphereRay, d) / a; // t value where the ray is closest to sphere center
-
-    float r2 = sphere.radius * sphere.radius; 
-    float sphereRay2 = glm::dot(sphereRay, sphereRay);
-
-    // if the closest point is behind the ray origin and the origin is outside the sphere, we can't see the sphere
-    if (tClosest < 0.0f && sphereRay2 > r2) return -1.0f; 
-
-    float cDotD = glm::dot(sphereRay, d);
-    float b = 2.0f * cDotD;
-    float c = sphereRay2 - r2;
-
-    float disc = b * b - 4.0f * a * c;
-    if (disc < 0.0f) return -1.0f;
-
-    float sqrtDisc = std::sqrt(disc);
-
-    // Use the smaller root first
-    float t0 = (-b - sqrtDisc) / (2.0f * a);
-    float t1 = (-b + sqrtDisc) / (2.0f * a);
-
-    if (t0 > 0) return t0;
-    if (t1 > 0) return t1;
-
-    return -1.0f;
-}
-
 
 int main()
 {
@@ -259,20 +317,32 @@ int main()
     Camera cam = Camera("perspective", ORIGIN, X_AXIS, Y_AXIS, width, height, 0, 10, 10, 10, 5);
 
     // Scene Objects
-    Sphere s1 = Sphere({10, 0, 3}, 2, {255, 0, 0});
-    Sphere s2 = Sphere({5, 0, -3}, 2, {0, 0, 255});
-
-
-    std::vector<Sphere> sceneObjects = {s1, s2};
+    std::vector<std::unique_ptr<Shape>> sceneObjects;
+    sceneObjects.emplace_back(std::make_unique<Sphere>(
+        glm::vec3{10.0f, 0.0f, 3.0f},   // center
+        2.0f,                           // radius
+        glm::vec3{255.0f, 0.0f, 0.0f}   // color
+    ));
+    sceneObjects.emplace_back(std::make_unique<Sphere>(
+        glm::vec3{5.0f, 0.0f, -3.0f},   // center
+        2.0f,                           // radius
+        glm::vec3{0.0f, 0.0f, 255.0f}   // color
+    ));
+    sceneObjects.emplace_back(std::make_unique<Triangle>(
+        glm::vec3{7.0f, 4.0f, 0.0f},    // a
+        glm::vec3{7.0f, 0.0f, -1.0f},   // b
+        glm::vec3{7.0f, 0.0f, 1.0f},    // c
+        glm::vec3{0.0f, 255.0f, 0.0f}   // color
+    ));
 
     for(int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
         {
             auto [curPixelOrigin, curPixelRayDirection] = cam.getRay(i, j);
-            std::vector<float> results(sceneObjects.size(), -1.0f);
+            std::vector<float> results(sceneObjects.size(), -1);
             for (int k = 0; k < sceneObjects.size(); k++) {
-                results[k] = raySphereIntersect(curPixelOrigin, curPixelRayDirection, sceneObjects[k]);
+                results[k] = sceneObjects[k]->getIntersection(curPixelOrigin, curPixelRayDirection);
             }
             float closestT = 1e9;
             int closestIndex = -1;
@@ -283,9 +353,11 @@ int main()
                     closestIndex = k;
                 }
             }
-            int idx = (i * width + j) * 3;
+            // glTexImage2D fills images bottom row to top, but we iterate top row to bottom
+            int flippedI = (height - 1 - i); // so we need to flip our i to count down instead
+            int idx = (flippedI * width + j) * 3;
             if (closestIndex >= 0) {
-                glm::vec3 color = sceneObjects[closestIndex].color;
+                glm::vec3 color = sceneObjects[closestIndex]->getColor();
                 image[idx] = color.x; 
                 image[idx+1] = color.y;
                 image[idx+2] = color.z;
