@@ -138,6 +138,37 @@ public:
     glm::vec3 getColor() const override { return color; }
 };
 
+class Plane : public Shape {
+    public:
+        glm::vec3 a;
+        glm::vec3 n;
+        glm::vec3 color;
+    
+        Plane(const glm::vec3 &a, const glm::vec3 &n, const glm::vec3 &color) 
+            : a(a), n(n), color(color)
+        {}
+    
+        float getIntersection(const glm::vec3& p, const glm::vec3& d) const override { 
+            // small value to approximate 0
+            const float EPS = 1e-7f;
+
+            glm::vec3 nn = glm::normalize(n);
+            float denom = glm::dot(nn, d);
+
+            // No intersection if ray parallel to plane
+            if (std::fabs(denom) < EPS) return -1.0f;
+
+            float t = glm::dot(nn, (a - p)) / denom;
+
+            // Intersection is behind the ray origin
+            if (t <= EPS) return -1.0f;
+
+            return t;
+        }
+    
+        glm::vec3 getColor() const override { return color; }
+    };
+
 struct Camera {
     std::string mode;
     glm::vec3 e, d, u, v, w;
