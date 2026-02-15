@@ -1,5 +1,5 @@
 // Based on templates from learnopengl.com
-// Authors: Matthew Lozito, Alex Kim
+// Authors: Alex Kim, Matthew Lozito
 #include <GL/glew.h>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -183,6 +183,19 @@ class Plane : public Shape {
         }
     };
 
+float k_a = 0.2;
+float k_d = 0.3;
+float k_s = 0.2;
+float phongN = 2.0;
+
+struct Light {
+    glm::vec3 dir;
+    glm::vec3 rayColor;
+    float I;
+    Light (const glm::vec3 &dir, const glm::vec3 &rayColor, float I)
+        : dir(dir), rayColor(rayColor), I(I) {}
+};
+
 struct Camera {
     char mode;
     glm::vec3 e, d, u, v, w;
@@ -354,8 +367,8 @@ int main()
     const glm::vec3 Z_AXIS{0.0f, 0.0f, 1.0f};    
 
     // Create the image (RGB Array) to be displayed
-    const int width  = 256; // keep it in powers of 2!
-    const int height = 256; // keep it in powers of 2!
+    const int width  = 512; // keep it in powers of 2!
+    const int height = 512; // keep it in powers of 2!
     unsigned char image[width*height*3];
 
     // Camera Setup
@@ -364,6 +377,15 @@ int main()
     // Scene Objects
     std::vector<std::unique_ptr<Shape>> sceneObjects;
 
+    // Scene Lights
+    std::vector<std::unique_ptr<Light>> sceneLights;
+
+    //Light
+    sceneLights.emplace_back(std::make_unique<Light>(
+        glm::vec3{0.0f, -1.0f, 0.0f},    // direction
+        glm::vec3{255.0f, 255.0f, 255.0f},    // ray color
+        2.5f  // intensity
+    ));
     //plane
     sceneObjects.emplace_back(std::make_unique<Plane>(
         glm::vec3{0.0f, 0.0f, 0.0f},    // point
@@ -423,6 +445,9 @@ int main()
                 }
             }
 
+            // glTexImage2D fills images bottom row to top, but we iterate top row to bottom
+            int flippedI = (height - 1 - i); // so we need to flip our i to count down instead
+            int idx = (flippedI * width + j) * 3;
             // only calculate color and lighting on ray hit
             if (closestIndex >= 0) {
                 Shape* intersectedShape = sceneObjects[closestIndex].get();
@@ -430,17 +455,21 @@ int main()
                 glm::vec3 intersectionPoint = curPixelOrigin + closestT * curPixelRayDirection;
                 glm::vec3 normal = intersectedShape->getNormal(intersectionPoint);
 
-                // lighting stuff goes here
-            }
-
-            // glTexImage2D fills images bottom row to top, but we iterate top row to bottom
-            int flippedI = (height - 1 - i); // so we need to flip our i to count down instead
-            int idx = (flippedI * width + j) * 3;
-            if (closestIndex >= 0) {
-                glm::vec3 color = sceneObjects[closestIndex]->getColor(); // replace with lighting color assignment
-                image[idx] = color.x; 
-                image[idx+1] = color.y;
-                image[idx+2] = color.z;
+                glm::vec3 LA = sceneObjects[closestIndex]->getColor() * k_a;
+                glm::vec3 LDTot = {0.0f, 0.0f, 0.0f};
+                glm::vec3 LSTot = {0.0f, 0.0f, 0.0f};
+                for (int k = 0; k < sceneLights.size(); k++) {
+                    glm::vec3 LD = k_d * sceneLights[k]->I * sceneObjects[closestIndex]->getColor() * std::max(0.0f, glm::dot(normal, -sceneLights[k]->dir));
+                    LDTot += LD;
+                    glm::vec3 VR = 2 * glm::dot(normal, -sceneLights[k]->dir) * normal + sceneLights[k]->dir;
+                    glm::vec3 LS = k_s * sceneLights[k]->I * sceneLights[k]->rayColor * std::pow(std::max(0.0f, glm::dot(-curPixelRayDirection, VR)), phongN);
+                    LSTot += LS;
+                }
+                glm::vec3 L = LA + LDTot + LSTot;
+                L = glm::clamp(L, 0.0f, 255.0f);
+                image[idx] = L.x;
+                image[idx+1] = L.y;
+                image[idx+2] = L.z;
             } else {
                 image[idx] = 0; 
                 image[idx+1] = 0;
