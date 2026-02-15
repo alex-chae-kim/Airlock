@@ -183,7 +183,8 @@ class Plane : public Shape {
         }
     };
 
-float k_a = 0.1;
+// lighting constants
+float k_a = 0.3;
 float k_d = 0.3;
 float k_s = 0.2;
 float phongN = 2.0;
@@ -382,7 +383,7 @@ int main()
 
     //Light
     sceneLights.emplace_back(std::make_unique<Light>(
-        glm::vec3{0.0f, -1.0f, 0.8f},    // direction
+        glm::vec3{0.0f, -1.0f, 1.0f},    // direction
         glm::vec3{255.0f, 255.0f, 255.0f},    // ray color
         1.0f  // intensity
     ));
@@ -455,6 +456,7 @@ int main()
                 glm::vec3 intersectionPoint = curPixelOrigin + closestT * curPixelRayDirection;
                 glm::vec3 normal = intersectedShape->getNormal(intersectionPoint);
 
+                // ambient shading
                 glm::vec3 LA = sceneObjects[closestIndex]->getColor() * k_a;
                 glm::vec3 LDTot = {0.0f, 0.0f, 0.0f};
                 glm::vec3 LSTot = {0.0f, 0.0f, 0.0f};
@@ -471,9 +473,11 @@ int main()
                         } 
                     }
                     if (!shadow) {
+                        // diffuse shading
                         glm::vec3 LD = k_d * sceneLights[k]->I * sceneObjects[closestIndex]->getColor() * std::max(0.0f, glm::dot(normal, -sceneLights[k]->dir));
                         LDTot += LD;
                         glm::vec3 VR = 2 * glm::dot(normal, -sceneLights[k]->dir) * normal + sceneLights[k]->dir;
+                        // specular shading
                         glm::vec3 LS = k_s * sceneLights[k]->I * sceneLights[k]->rayColor * std::pow(std::max(0.0f, glm::dot(-curPixelRayDirection, VR)), phongN);
                         LSTot += LS;
                     }
