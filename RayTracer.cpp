@@ -48,6 +48,7 @@ class Shape {
         virtual ~Shape() = default;
         virtual float getIntersection(const glm::vec3& p, const glm::vec3& d) const = 0;
         virtual glm::vec3 getColor() const = 0;
+        virtual glm::vec3 getNormal(const glm::vec3& point) const = 0;
 };
 
 struct Sphere : public Shape {
@@ -92,6 +93,9 @@ public:
     }
 
     glm::vec3 getColor() const override { return color; }
+    glm::vec3 getNormal(const glm::vec3& point) const override {
+        return glm::normalize(point - center);
+    }
 };   
 
 class Triangle : public Shape {
@@ -137,6 +141,12 @@ public:
     }
 
     glm::vec3 getColor() const override { return color; }
+    glm::vec3 getNormal(const glm::vec3& point) const override {
+        glm::vec3 ab = b - a;
+        glm::vec3 ac = c - a;
+        glm::vec3 normal = glm::cross(ab, ac);
+        return glm::normalize(normal);
+    }
 };
 
 class Plane : public Shape {
@@ -168,6 +178,9 @@ class Plane : public Shape {
         }
     
         glm::vec3 getColor() const override { return color; }
+        glm::vec3 getNormal(const glm::vec3& point) const override {
+            return glm::normalize(n);
+        }
     };
 
 struct Camera {
@@ -341,8 +354,8 @@ int main()
     const glm::vec3 Z_AXIS{0.0f, 0.0f, 1.0f};    
 
     // Create the image (RGB Array) to be displayed
-    const int width  = 512; // keep it in powers of 2!
-    const int height = 512; // keep it in powers of 2!
+    const int width  = 256; // keep it in powers of 2!
+    const int height = 256; // keep it in powers of 2!
     unsigned char image[width*height*3];
 
     // Camera Setup
@@ -409,11 +422,22 @@ int main()
                     closestIndex = k;
                 }
             }
+
+            // only calculate color and lighting on ray hit
+            if (closestIndex >= 0) {
+                Shape* intersectedShape = sceneObjects[closestIndex].get();
+
+                glm::vec3 intersectionPoint = curPixelOrigin + closestT * curPixelRayDirection;
+                glm::vec3 normal = intersectedShape->getNormal(intersectionPoint);
+
+                // lighting stuff goes here
+            }
+
             // glTexImage2D fills images bottom row to top, but we iterate top row to bottom
             int flippedI = (height - 1 - i); // so we need to flip our i to count down instead
             int idx = (flippedI * width + j) * 3;
             if (closestIndex >= 0) {
-                glm::vec3 color = sceneObjects[closestIndex]->getColor();
+                glm::vec3 color = sceneObjects[closestIndex]->getColor(); // replace with lighting color assignment
                 image[idx] = color.x; 
                 image[idx+1] = color.y;
                 image[idx+2] = color.z;
