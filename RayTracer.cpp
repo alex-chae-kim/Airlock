@@ -183,7 +183,7 @@ class Plane : public Shape {
         }
     };
 
-float k_a = 0.2;
+float k_a = 0.1;
 float k_d = 0.3;
 float k_s = 0.2;
 float phongN = 2.0;
@@ -372,7 +372,7 @@ int main()
     unsigned char image[width*height*3];
 
     // Camera Setup
-    Camera cam = Camera('p', glm::vec3{0.0f, 5.0f, 0.0f}, glm::vec3{1.0f, -0.05f, 0.0f}, glm::vec3{0.05f, 1, 0.0f}, width, height, 0, 10, 10, 10, 5);
+    Camera cam = Camera('p', glm::vec3{0.0f, 3.0f, 0.0f}, glm::vec3{1.0f, -0.05f, 0.0f}, glm::vec3{0.05f, 1, 0.0f}, width, height, 0, 10, 10, 10, 5);
 
     // Scene Objects
     std::vector<std::unique_ptr<Shape>> sceneObjects;
@@ -382,9 +382,9 @@ int main()
 
     //Light
     sceneLights.emplace_back(std::make_unique<Light>(
-        glm::vec3{0.0f, -1.0f, 0.0f},    // direction
+        glm::vec3{0.0f, -1.0f, 0.8f},    // direction
         glm::vec3{255.0f, 255.0f, 255.0f},    // ray color
-        2.5f  // intensity
+        1.0f  // intensity
     ));
     //plane
     sceneObjects.emplace_back(std::make_unique<Plane>(
@@ -458,12 +458,25 @@ int main()
                 glm::vec3 LA = sceneObjects[closestIndex]->getColor() * k_a;
                 glm::vec3 LDTot = {0.0f, 0.0f, 0.0f};
                 glm::vec3 LSTot = {0.0f, 0.0f, 0.0f};
+
                 for (int k = 0; k < sceneLights.size(); k++) {
-                    glm::vec3 LD = k_d * sceneLights[k]->I * sceneObjects[closestIndex]->getColor() * std::max(0.0f, glm::dot(normal, -sceneLights[k]->dir));
-                    LDTot += LD;
-                    glm::vec3 VR = 2 * glm::dot(normal, -sceneLights[k]->dir) * normal + sceneLights[k]->dir;
-                    glm::vec3 LS = k_s * sceneLights[k]->I * sceneLights[k]->rayColor * std::pow(std::max(0.0f, glm::dot(-curPixelRayDirection, VR)), phongN);
-                    LSTot += LS;
+                    bool shadow = false;
+                    glm::vec3 pointToLightDir = -(sceneLights[k]->dir);
+                    for (int l = 0; l < sceneObjects.size(); l++) {
+                        float hit = sceneObjects[l]->getIntersection(intersectionPoint, pointToLightDir);
+                        float EPS = 1e-3;
+                        if (hit > EPS) {
+                            shadow = true; 
+                            break;
+                        } 
+                    }
+                    if (!shadow) {
+                        glm::vec3 LD = k_d * sceneLights[k]->I * sceneObjects[closestIndex]->getColor() * std::max(0.0f, glm::dot(normal, -sceneLights[k]->dir));
+                        LDTot += LD;
+                        glm::vec3 VR = 2 * glm::dot(normal, -sceneLights[k]->dir) * normal + sceneLights[k]->dir;
+                        glm::vec3 LS = k_s * sceneLights[k]->I * sceneLights[k]->rayColor * std::pow(std::max(0.0f, glm::dot(-curPixelRayDirection, VR)), phongN);
+                        LSTot += LS;
+                    }
                 }
                 glm::vec3 L = LA + LDTot + LSTot;
                 L = glm::clamp(L, 0.0f, 255.0f);
