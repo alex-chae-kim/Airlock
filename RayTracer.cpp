@@ -11,6 +11,12 @@
 #include <memory>
 #include <cctype>
 #include <functional>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <filesystem>
+#include <cerrno>
+#include <cstring>
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow *window);
@@ -255,7 +261,28 @@ struct Camera {
             return getPerspectiveRay(i, j);
         }
     }
+
+    void rebuildBasis(const glm::vec3& origin, const glm::vec3& viewDir, const glm::vec3& up) {
+        e = origin;
+        d = glm::normalize(viewDir);
+    
+        glm::vec3 upN = glm::normalize(up);
+        upN = upN - glm::dot(upN, d) * d;
+        v = glm::normalize(upN);
+    
+        w = -d;
+        u = glm::normalize(glm::cross(v, w));
+    
+        pixelW = viewW / float(width);
+        pixelH = viewH / float(height);
+    }
 };
+
+static void writePPM(const std::string& filename, const unsigned char* rgb, int w, int h) {
+    std::ofstream out(filename, std::ios::binary);
+    out << "P6\n" << w << " " << h << "\n255\n";
+    out.write(reinterpret_cast<const char*>(rgb), w * h * 3);
+}
 
 int main()
 {
@@ -381,19 +408,21 @@ int main()
     const glm::vec3 Y_AXIS{0.0f, 1.0f, 0.0f};
     const glm::vec3 Z_AXIS{0.0f, 0.0f, 1.0f};    
 
-    // Create the image (RGB Array) to be displayed
-    const int width  = 512; // keep it in powers of 2!
-    const int height = 512; // keep it in powers of 2!
+    // Create the image (RGB Array) to be displayedcl
+    const int width  = 1024; // keep it in powers of 2!
+    const int height = 1024; // keep it in powers of 2!
     unsigned char image[width*height*3];
 
     // Camera Setup
-    Camera cam = Camera('p', glm::vec3{-50.0f, 10.0f, 1.0f}, glm::vec3{1.0f, -0.1f, 0.0f}, glm::vec3{0.1f, 1, 0.0f}, width, height, 0, 10, 15, 15, 50);
+    Camera cam = Camera('p', glm::vec3{-50.0f, 5.0f, 1.0f}, glm::vec3{1.0f, -0.01f, 0.0f}, glm::vec3{0.01f, 1, 0.0f}, width, height, 0, 10, 15, 15, 50);
 
     // Scene Objects
     std::vector<std::unique_ptr<Shape>> sceneObjects;
 
     // Scene Lights
     std::vector<std::unique_ptr<Light>> sceneLights;
+
+    const bool glazed = true;
 
     //Light
     sceneLights.emplace_back(std::make_unique<Light>(
@@ -406,36 +435,45 @@ int main()
         glm::vec3{0.0f, 0.0f, 0.0f},    // point
         Y_AXIS,                         // normal
         glm::vec3{50.0f, 50.0f, 50.0f}, // color
-        true                           // glazed?
+        glazed                           // glazed?
     ));
     // sphere 1
     sceneObjects.emplace_back(std::make_unique<Sphere>(
         glm::vec3{15.0f, 4.0f, 4.0f},   // center
         4.0f,                           // radius
         glm::vec3{255.0f, 0.0f, 0.0f},  // color
-        true                           // glazed?
+        glazed                           // glazed?
     ));
     // sphere 2
-    sceneObjects.emplace_back(std::make_unique<Sphere>(
-        glm::vec3{8.0f, 2.0f, -3.0f},   // center
-        2.0f,                           // radius
-        glm::vec3{0.0f, 0.0f, 255.0f},  // color
-        true                           // glazed?
-    ));
-    // sphere 3
-    sceneObjects.emplace_back(std::make_unique<Sphere>(
-        glm::vec3{4.0f, 1.5f, 5.0f},   // center
-        1.5f,                           // radius
-        glm::vec3{255.0f, 255.0f, 0.0f},  // color
-        true                           // glazed?
-    ));
+    Sphere* blueSphere = nullptr;
+    {
+        auto s = std::make_unique<Sphere>(
+            glm::vec3{8.0f, 3.0f, -3.0f},   // center
+            2.0f,                           // radius
+            glm::vec3{0.0f, 0.0f, 255.0f},  // color
+            glazed
+        );
+        blueSphere = s.get();
+        sceneObjects.emplace_back(std::move(s));
+    }
+    Sphere* yellowSphere = nullptr;
+    {
+        auto s = std::make_unique<Sphere>(
+            glm::vec3{4.0f, 3.0f, 5.0f},     // center
+            1.5f,                             // radius
+            glm::vec3{255.0f, 255.0f, 0.0f},  // color
+            glazed
+        );
+        yellowSphere = s.get();
+        sceneObjects.emplace_back(std::move(s));
+    }
     // triangle 1
     sceneObjects.emplace_back(std::make_unique<Triangle>(
         glm::vec3{8.0f, 4.0f, 1.5f},    // a
         glm::vec3{9.0f, 0.0f, -1.0f},   // b
         glm::vec3{6.0f, 0.0f, 2.0f},    // c
         glm::vec3{0.0f, 255.0f, 0.0f},  // color
-        true                           // glazed?
+        glazed                           // glazed?
     ));
     // triangle 2
     sceneObjects.emplace_back(std::make_unique<Triangle>(
@@ -443,7 +481,7 @@ int main()
         glm::vec3{6.0f, 0.0f, 2.0f},    // b
         glm::vec3{9.0f, 0.0f, 4.0f},    // c
         glm::vec3{0.0f, 255.0f, 0.0f},  // color
-        true                           // glazed?
+        glazed                           // glazed?
     ));
     // triangle 3
     sceneObjects.emplace_back(std::make_unique<Triangle>(
@@ -492,6 +530,8 @@ int main()
 
             for (int k = 0; k < sceneLights.size(); k++) {
                 bool shadow = false;
+                
+                
                 glm::vec3 pointToLightDir = -(sceneLights[k]->dir);
                 for (int l = 0; l < sceneObjects.size(); l++) {
                     float hit = sceneObjects[l]->getIntersection(intersectionPoint + normal * EPS, pointToLightDir);
@@ -500,6 +540,7 @@ int main()
                         break;
                     } 
                 }
+                
                 if (!shadow) {
                     glm::vec3 LD = k_d * sceneLights[k]->I * sceneObjects[closestIndex]->getColor() * std::max(0.0f, glm::dot(normal, -sceneLights[k]->dir));
                     LDTot += LD;
@@ -515,13 +556,13 @@ int main()
         return glm::vec3(0.0f);
     };
 
-
+    /* Old single image render
     for(int i = 0; i < height; i++)
     {
         for (int j = 0; j < width; j++)
         {
             auto [curPixelOrigin, curPixelRayDirection] = cam.getRay(i, j);
-            glm::vec3 L = getRayColor(curPixelOrigin, curPixelRayDirection, 3);
+            glm::vec3 L = getRayColor(curPixelOrigin, curPixelRayDirection, 5);
             // glTexImage2D fills images bottom row to top, but we iterate top row to bottom
             int flippedI = (height - 1 - i); // so we need to flip our i to count down instead
             int idx = (flippedI * width + j) * 3;
@@ -529,6 +570,73 @@ int main()
             image[idx+1] = L.y;
             image[idx+2] = L.z;   
         }
+    }
+    */
+
+    auto renderFrame = [&](Camera& cam, unsigned char* imageOut) {
+        for (int i = 0; i < height; i++) {
+            for (int j = 0; j < width; j++) {
+                auto [curPixelOrigin, curPixelRayDirection] = cam.getRay(i, j);
+                glm::vec3 L = getRayColor(curPixelOrigin, curPixelRayDirection, 3);
+    
+                int flippedI = (height - 1 - i);
+                int idx = (flippedI * width + j) * 3;
+                imageOut[idx]   = (unsigned char)L.x;
+                imageOut[idx+1] = (unsigned char)L.y;
+                imageOut[idx+2] = (unsigned char)L.z;
+            }
+        }
+    };
+    std::cout << "Working directory: " << std::filesystem::current_path() << "\n";
+    std::filesystem::create_directories("frames");
+
+    const int numFrames = 180;
+    const float radius  = 60.0f;    // orbit distance
+    const float camY    = 5.0f;     // camera height
+    const glm::vec3 target(8.0f, 0.5f, 1.5f); // point to look at
+    const glm::vec3 worldUp(0.0f, 1.0f, 0.0f);
+    const glm::vec3 blueBase   = blueSphere->center;
+    const glm::vec3 yellowBase = yellowSphere->center;
+
+    for (int f = 0; f < numFrames; f++) {
+        float t = float(f) / float(numFrames);
+        float theta = t * 2.0f * 3.1415926535f;
+
+        // bob amplitudes
+        float blueAmp   = 1.0f;
+        float yellowAmp = 1.0f;
+
+        // bobs per clip
+        float blueSpeed   = 2.0f;
+        float yellowSpeed = 3.0f;
+
+        blueSphere->center.y   = blueBase.y   + blueAmp   * std::sin(blueSpeed   * theta);
+        yellowSphere->center.y = yellowBase.y + yellowAmp * std::sin(yellowSpeed * theta + 1.0f);
+
+        glm::vec3 camPos = target + glm::vec3(radius * std::cos(theta), camY, radius * std::sin(theta));
+        glm::vec3 viewDir = target - camPos;
+
+        cam.rebuildBasis(camPos, viewDir, worldUp);
+
+        renderFrame(cam, image);
+
+        // save frame
+        std::ostringstream name;
+        name << "frames/frame_" << std::setw(4) << std::setfill('0') << f << ".ppm";
+        writePPM(name.str(), image, width, height);
+
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
+        glGenerateMipmap(GL_TEXTURE_2D);
+
+        glClear(GL_COLOR_BUFFER_BIT);
+        glUseProgram(shaderProgram);
+        glBindVertexArray(VAO);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        glfwSwapBuffers(window);
+        glfwPollEvents();
+
+        if (glfwWindowShouldClose(window)) break;
     }
 
     unsigned char *data = &image[0];
