@@ -10,9 +10,9 @@
 #include <type_traits>
 #include <memory>
 #include <cctype>
+#include <functional>
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
-void processInput(GLFWwindow *window);
 
 // settings
 const unsigned int SCR_WIDTH = 800;
@@ -41,7 +41,10 @@ const char *fragmentShaderSource = "#version 330 core\n"
     "{\n"
     "   FragColor = texture(texture1, TexCoord);\n"
     "}\n\0";
-    
+
+// 
+bool prevP = false;
+bool prevO = false;
 
 class Shape {
     public:   
@@ -49,6 +52,7 @@ class Shape {
         virtual float getIntersection(const glm::vec3& p, const glm::vec3& d) const = 0;
         virtual glm::vec3 getColor() const = 0;
         virtual glm::vec3 getNormal(const glm::vec3& point) const = 0;
+        virtual bool isGlazed() const = 0;
 };
 
 struct Sphere : public Shape {
@@ -56,9 +60,10 @@ public:
     glm::vec3 center;
     float radius;
     glm::vec3 color;
+    bool glazed;
     
-    Sphere(const glm::vec3 &c, float r, const glm::vec3 &col) 
-        : center(c), radius(r), color(col) 
+    Sphere(const glm::vec3 &c, float r, const glm::vec3 &col, const bool glazed) 
+        : center(c), radius(r), color(col), glazed(glazed) 
     {}
     
     float getIntersection(const glm::vec3& p, const glm::vec3& d) const override {
@@ -96,6 +101,9 @@ public:
     glm::vec3 getNormal(const glm::vec3& point) const override {
         return glm::normalize(point - center);
     }
+    bool isGlazed() const override {
+        return glazed;
+    }
 };   
 
 class Triangle : public Shape {
@@ -104,9 +112,10 @@ public:
     glm::vec3 b;
     glm::vec3 c;
     glm::vec3 color;
+    bool glazed;
 
-    Triangle(const glm::vec3 &a, const glm::vec3 &b, const glm::vec3 &c, const glm::vec3 &color) 
-        : a(a), b(b), c(c), color(color)
+    Triangle(const glm::vec3 &a, const glm::vec3 &b, const glm::vec3 &c, const glm::vec3 &color, const bool glazed) 
+        : a(a), b(b), c(c), color(color), glazed(glazed)
     {}
 
     float getIntersection(const glm::vec3& p, const glm::vec3& d) const override { 
@@ -147,6 +156,9 @@ public:
         glm::vec3 normal = glm::cross(ab, ac);
         return glm::normalize(normal);
     }
+    bool isGlazed() const override {
+        return glazed;
+    }
 };
 
 class Plane : public Shape {
@@ -154,9 +166,10 @@ class Plane : public Shape {
         glm::vec3 a;
         glm::vec3 n;
         glm::vec3 color;
+        bool glazed;
     
-        Plane(const glm::vec3 &a, const glm::vec3 &n, const glm::vec3 &color) 
-            : a(a), n(n), color(color)
+        Plane(const glm::vec3 &a, const glm::vec3 &n, const glm::vec3 &color, const bool glazed) 
+            : a(a), n(n), color(color), glazed(glazed)
         {}
     
         float getIntersection(const glm::vec3& p, const glm::vec3& d) const override { 
@@ -181,12 +194,16 @@ class Plane : public Shape {
         glm::vec3 getNormal(const glm::vec3& point) const override {
             return glm::normalize(n);
         }
+        bool isGlazed() const override {
+            return glazed;
+        }
     };
 
-float k_a = 0.1;
+float k_a = 0.12;
 float k_d = 0.3;
 float k_s = 0.2;
-float phongN = 2.0;
+float k_g = 0.4;
+float phongN = 5.0;
 
 struct Light {
     glm::vec3 dir;
@@ -241,6 +258,8 @@ struct Camera {
         }
     }
 };
+
+void processInput(GLFWwindow *window, Camera& cam, const std::function<void()>& rerender);
 
 int main()
 {
@@ -372,7 +391,7 @@ int main()
     unsigned char image[width*height*3];
 
     // Camera Setup
-    Camera cam = Camera('p', glm::vec3{0.0f, 3.0f, 0.0f}, glm::vec3{1.0f, -0.05f, 0.0f}, glm::vec3{0.05f, 1, 0.0f}, width, height, 0, 10, 10, 10, 5);
+    Camera cam = Camera('p', glm::vec3{-50.0f, 10.0f, 1.0f}, glm::vec3{1.0f, -0.1f, 0.0f}, glm::vec3{0.1f, 1, 0.0f}, width, height, 0, 10, 15, 15, 50);
 
     // Scene Objects
     std::vector<std::unique_ptr<Shape>> sceneObjects;
@@ -382,7 +401,7 @@ int main()
 
     //Light
     sceneLights.emplace_back(std::make_unique<Light>(
-        glm::vec3{0.0f, -1.0f, 0.8f},    // direction
+        glm::vec3{-0.2f, -1.0f, 0.8f},    // direction
         glm::vec3{255.0f, 255.0f, 255.0f},    // ray color
         1.0f  // intensity
     ));
@@ -390,120 +409,140 @@ int main()
     sceneObjects.emplace_back(std::make_unique<Plane>(
         glm::vec3{0.0f, 0.0f, 0.0f},    // point
         Y_AXIS,                         // normal
-        glm::vec3{50.0f, 50.0f, 50.0f}  // color
+        glm::vec3{50.0f, 50.0f, 50.0f}, // color
+        true                           // glazed?
     ));
     // sphere 1
     sceneObjects.emplace_back(std::make_unique<Sphere>(
         glm::vec3{15.0f, 4.0f, 4.0f},   // center
         4.0f,                           // radius
-        glm::vec3{255.0f, 0.0f, 0.0f}   // color
+        glm::vec3{255.0f, 0.0f, 0.0f},  // color
+        true                           // glazed?
     ));
     // sphere 2
     sceneObjects.emplace_back(std::make_unique<Sphere>(
-        glm::vec3{10.0f, 2.0f, -3.0f},   // center
+        glm::vec3{8.0f, 2.0f, -3.0f},   // center
         2.0f,                           // radius
-        glm::vec3{0.0f, 0.0f, 255.0f}   // color
+        glm::vec3{0.0f, 0.0f, 255.0f},  // color
+        true                           // glazed?
+    ));
+    // sphere 3
+    sceneObjects.emplace_back(std::make_unique<Sphere>(
+        glm::vec3{4.0f, 1.5f, 5.0f},   // center
+        1.5f,                           // radius
+        glm::vec3{255.0f, 255.0f, 0.0f},  // color
+        true                           // glazed?
     ));
     // triangle 1
     sceneObjects.emplace_back(std::make_unique<Triangle>(
-        glm::vec3{8.0f, 4.0f, 2.0f},    // a
+        glm::vec3{8.0f, 4.0f, 1.5f},    // a
         glm::vec3{9.0f, 0.0f, -1.0f},   // b
-        glm::vec3{7.0f, 0.0f, 1.0f},    // c
-        glm::vec3{0.0f, 255.0f, 0.0f}   // color
+        glm::vec3{6.0f, 0.0f, 2.0f},    // c
+        glm::vec3{0.0f, 255.0f, 0.0f},  // color
+        true                           // glazed?
     ));
     // triangle 2
     sceneObjects.emplace_back(std::make_unique<Triangle>(
-        glm::vec3{8.0f, 4.0f, 2.0f},    // a
-        glm::vec3{7.0f, 0.0f, 1.0f},    // b
+        glm::vec3{8.0f, 4.0f, 1.5f},    // a
+        glm::vec3{6.0f, 0.0f, 2.0f},    // b
         glm::vec3{9.0f, 0.0f, 4.0f},    // c
-        glm::vec3{0.0f, 255.0f, 0.0f}   // color
+        glm::vec3{0.0f, 255.0f, 0.0f},  // color
+        true                           // glazed?
     ));
     // triangle 3
     sceneObjects.emplace_back(std::make_unique<Triangle>(
-        glm::vec3{8.0f, 4.0f, 2.0f},    // a
+        glm::vec3{8.0f, 4.0f, 1.5f},    // a
         glm::vec3{9.0f, 0.0f, 4.0f},    // b
         glm::vec3{9.0f, 0.0f, -1.0f},   // c
-        glm::vec3{0.0f, 255.0f, 0.0f}   // color
+        glm::vec3{0.0f, 255.0f, 0.0f},  // color
+        true                           // glazed?
     ));
 
-    for(int i = 0; i < height; i++)
-    {
-        for (int j = 0; j < width; j++)
-        {
-            auto [curPixelOrigin, curPixelRayDirection] = cam.getRay(i, j);
-            std::vector<float> results(sceneObjects.size(), -1);
-            for (int k = 0; k < sceneObjects.size(); k++) {
-                results[k] = sceneObjects[k]->getIntersection(curPixelOrigin, curPixelRayDirection);
-            }
-            float closestT = 1e9;
-            int closestIndex = -1;
-            for(int k = 0; k < results.size(); k++) {
-                float curT = results[k];
-                if (curT > 0 && curT < closestT) {
-                    closestT = curT;
-                    closestIndex = k;
-                }
-            }
+    // function to get the color of an outgoing ray based on its collisions
+    std::function<glm::vec3(const glm::vec3&, const glm::vec3&, int)> getRayColor;
+    getRayColor = [&](const glm::vec3& origin, const glm::vec3& direction, int depth) -> glm::vec3 {
+        if (depth <= 0) return glm::vec3(0.0f); // recursion limit
 
-            // glTexImage2D fills images bottom row to top, but we iterate top row to bottom
-            int flippedI = (height - 1 - i); // so we need to flip our i to count down instead
-            int idx = (flippedI * width + j) * 3;
-            // only calculate color and lighting on ray hit
-            if (closestIndex >= 0) {
-                Shape* intersectedShape = sceneObjects[closestIndex].get();
-
-                glm::vec3 intersectionPoint = curPixelOrigin + closestT * curPixelRayDirection;
-                glm::vec3 normal = intersectedShape->getNormal(intersectionPoint);
-
-                glm::vec3 LA = sceneObjects[closestIndex]->getColor() * k_a;
-                glm::vec3 LDTot = {0.0f, 0.0f, 0.0f};
-                glm::vec3 LSTot = {0.0f, 0.0f, 0.0f};
-
-                for (int k = 0; k < sceneLights.size(); k++) {
-                    bool shadow = false;
-                    glm::vec3 pointToLightDir = -(sceneLights[k]->dir);
-                    for (int l = 0; l < sceneObjects.size(); l++) {
-                        float hit = sceneObjects[l]->getIntersection(intersectionPoint, pointToLightDir);
-                        float EPS = 1e-3;
-                        if (hit > EPS) {
-                            shadow = true; 
-                            break;
-                        } 
-                    }
-                    if (!shadow) {
-                        glm::vec3 LD = k_d * sceneLights[k]->I * sceneObjects[closestIndex]->getColor() * std::max(0.0f, glm::dot(normal, -sceneLights[k]->dir));
-                        LDTot += LD;
-                        glm::vec3 VR = 2 * glm::dot(normal, -sceneLights[k]->dir) * normal + sceneLights[k]->dir;
-                        glm::vec3 LS = k_s * sceneLights[k]->I * sceneLights[k]->rayColor * std::pow(std::max(0.0f, glm::dot(-curPixelRayDirection, VR)), phongN);
-                        LSTot += LS;
-                    }
-                }
-                glm::vec3 L = LA + LDTot + LSTot;
-                L = glm::clamp(L, 0.0f, 255.0f);
-                image[idx] = L.x;
-                image[idx+1] = L.y;
-                image[idx+2] = L.z;
-            } else {
-                image[idx] = 0; 
-                image[idx+1] = 0;
-                image[idx+2] = 0;
-            }
-
-            
+        std::vector<float> results(sceneObjects.size(), -1);
+        for (int k = 0; k < sceneObjects.size(); k++) {
+            results[k] = sceneObjects[k]->getIntersection(origin, direction);
         }
-    }
+        float closestT = 1e9;
+        int closestIndex = -1;
+        for(int k = 0; k < results.size(); k++) {
+            float curT = results[k];
+            if (curT > 0 && curT < closestT) {
+                closestT = curT;
+                closestIndex = k;
+            }
+        }
+        // only calculate color and lighting on ray hit
+        if (closestIndex >= 0) {
+            Shape* intersectedShape = sceneObjects[closestIndex].get();
 
-    unsigned char *data = &image[0];
-    if (data)
-    {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+            glm::vec3 intersectionPoint = origin + closestT * direction;
+            glm::vec3 normal = intersectedShape->getNormal(intersectionPoint);
+            const float EPS = 1e-3f;
+            glm::vec3 reflectedDir = 2 * glm::dot(normal, -direction) * normal + direction;
+
+            glm::vec3 LA = sceneObjects[closestIndex]->getColor() * k_a;
+            glm::vec3 LDTot = {0.0f, 0.0f, 0.0f};
+            glm::vec3 LSTot = {0.0f, 0.0f, 0.0f};
+            glm::vec3 LGTot = {0.0f, 0.0f, 0.0f};
+
+            if (sceneObjects[closestIndex]->isGlazed()) {
+                LGTot += k_g * getRayColor(intersectionPoint + normal * EPS, reflectedDir, depth - 1);
+            }
+
+            for (int k = 0; k < sceneLights.size(); k++) {
+                bool shadow = false;
+                glm::vec3 pointToLightDir = -(sceneLights[k]->dir);
+                for (int l = 0; l < sceneObjects.size(); l++) {
+                    float hit = sceneObjects[l]->getIntersection(intersectionPoint + normal * EPS, pointToLightDir);
+                    if (hit > EPS) {
+                        shadow = true; 
+                        break;
+                    } 
+                }
+                if (!shadow) {
+                    glm::vec3 LD = k_d * sceneLights[k]->I * sceneObjects[closestIndex]->getColor() * std::max(0.0f, glm::dot(normal, -sceneLights[k]->dir));
+                    LDTot += LD;
+                    glm::vec3 VR = 2 * glm::dot(normal, -sceneLights[k]->dir) * normal + sceneLights[k]->dir;
+                    glm::vec3 LS = k_s * sceneLights[k]->I * sceneLights[k]->rayColor * std::pow(std::max(0.0f, glm::dot(-direction, VR)), phongN);
+                    LSTot += LS;                 
+                }
+            }
+            glm::vec3 L = LA + LDTot + LSTot + LGTot;
+            L = glm::clamp(L, 0.0f, 255.0f);
+            return L;
+        }
+        return glm::vec3(0.0f);
+    };
+
+    // function to render a single image
+    auto RaytraceAndUpload = [&](){
+        for(int i = 0; i < height; i++)
+        {
+            for (int j = 0; j < width; j++)
+            {
+                auto [curPixelOrigin, curPixelRayDirection] = cam.getRay(i, j);
+                glm::vec3 L = getRayColor(curPixelOrigin, curPixelRayDirection, 3);
+    
+                int flippedI = (height - 1 - i);
+                int idx = (flippedI * width + j) * 3;
+                image[idx]   = (unsigned char)L.x;
+                image[idx+1] = (unsigned char)L.y;
+                image[idx+2] = (unsigned char)L.z;
+            }
+        }
+    
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
         glGenerateMipmap(GL_TEXTURE_2D);
-    }
-    else
-    {
-        std::cout << "Failed to load texture" << std::endl;
-    }
+    };
    
+    // draw on run
+    RaytraceAndUpload();
 
 
     // render loop
@@ -512,7 +551,7 @@ int main()
     {
         // input
         // -----
-        processInput(window);
+        processInput(window, cam, RaytraceAndUpload);
 
         // render
         // ------
@@ -547,10 +586,25 @@ int main()
 
 // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
 // ---------------------------------------------------------------------------------------------------------
-void processInput(GLFWwindow *window)
+void processInput(GLFWwindow *window, Camera& cam, const std::function<void()>& rerender)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
+
+    bool pDown = (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS);
+    bool oDown = (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS);
+
+    if (pDown && prevP) {
+        cam.mode = 'p';
+        rerender();
+    }
+    if (oDown && !prevO) {
+        cam.mode = 'o';
+        rerender();
+    }
+
+    prevP = pDown;
+    prevO = oDown;
 }
 
 // glfw: whenever the window size changed (by OS or user resize) this callback function executes
