@@ -13,7 +13,6 @@
 #include <functional>
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
-void processInput(GLFWwindow *window);
 
 // settings
 const unsigned int SCR_WIDTH = 800;
@@ -42,7 +41,10 @@ const char *fragmentShaderSource = "#version 330 core\n"
     "{\n"
     "   FragColor = texture(texture1, TexCoord);\n"
     "}\n\0";
-    
+
+// 
+bool prevP = false;
+bool prevO = false;
 
 class Shape {
     public:   
@@ -257,6 +259,8 @@ struct Camera {
     }
 };
 
+void processInput(GLFWwindow *window, Camera& cam, const std::function<void()>& rerender);
+
 int main()
 {
     // glfw: initialize and configure
@@ -454,8 +458,8 @@ int main()
         true                           // glazed?
     ));
 
+    // function to get the color of an outgoing ray based on its collisions
     std::function<glm::vec3(const glm::vec3&, const glm::vec3&, int)> getRayColor;
-
     getRayColor = [&](const glm::vec3& origin, const glm::vec3& direction, int depth) -> glm::vec3 {
         if (depth <= 0) return glm::vec3(0.0f); // recursion limit
 
@@ -515,33 +519,30 @@ int main()
         return glm::vec3(0.0f);
     };
 
-
-    for(int i = 0; i < height; i++)
-    {
-        for (int j = 0; j < width; j++)
+    // function to render a single image
+    auto RaytraceAndUpload = [&](){
+        for(int i = 0; i < height; i++)
         {
-            auto [curPixelOrigin, curPixelRayDirection] = cam.getRay(i, j);
-            glm::vec3 L = getRayColor(curPixelOrigin, curPixelRayDirection, 3);
-            // glTexImage2D fills images bottom row to top, but we iterate top row to bottom
-            int flippedI = (height - 1 - i); // so we need to flip our i to count down instead
-            int idx = (flippedI * width + j) * 3;
-            image[idx] = L.x;
-            image[idx+1] = L.y;
-            image[idx+2] = L.z;   
+            for (int j = 0; j < width; j++)
+            {
+                auto [curPixelOrigin, curPixelRayDirection] = cam.getRay(i, j);
+                glm::vec3 L = getRayColor(curPixelOrigin, curPixelRayDirection, 3);
+    
+                int flippedI = (height - 1 - i);
+                int idx = (flippedI * width + j) * 3;
+                image[idx]   = (unsigned char)L.x;
+                image[idx+1] = (unsigned char)L.y;
+                image[idx+2] = (unsigned char)L.z;
+            }
         }
-    }
-
-    unsigned char *data = &image[0];
-    if (data)
-    {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+    
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
         glGenerateMipmap(GL_TEXTURE_2D);
-    }
-    else
-    {
-        std::cout << "Failed to load texture" << std::endl;
-    }
+    };
    
+    // draw on run
+    RaytraceAndUpload();
 
 
     // render loop
@@ -550,7 +551,7 @@ int main()
     {
         // input
         // -----
-        processInput(window);
+        processInput(window, cam, RaytraceAndUpload);
 
         // render
         // ------
@@ -585,10 +586,25 @@ int main()
 
 // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
 // ---------------------------------------------------------------------------------------------------------
-void processInput(GLFWwindow *window)
+void processInput(GLFWwindow *window, Camera& cam, const std::function<void()>& rerender)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
+
+    bool pDown = (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS);
+    bool oDown = (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS);
+
+    if (pDown && prevP) {
+        cam.mode = 'p';
+        rerender();
+    }
+    if (oDown && !prevO) {
+        cam.mode = 'o';
+        rerender();
+    }
+
+    prevP = pDown;
+    prevO = oDown;
 }
 
 // glfw: whenever the window size changed (by OS or user resize) this callback function executes
